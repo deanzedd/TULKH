@@ -1,0 +1,39 @@
+1. Giải thích Đầu bài (Problem Statement)
+Bài toán yêu cầu bạn đóng vai trò là một người chủ trì hội nghị (conference chair), cần phân công các bài báo khoa học cho các phản biện (reviewers) sao cho "cân bằng" nhất có thể.
+Các thông số và định nghĩa cơ bản:
+Có N bài báo (papers) được đánh số từ 1 đến N.
+Có M người phản biện (reviewers) được đánh số từ 1 đến M.
+Mỗi bài báo i có một danh sách L(i) gồm các phản biện sẵn sàng (willing) chấm bài đó. Bạn chỉ được phép phân công bài i cho những người nằm trong L(i).
+Hằng số b: Số lượng phản biện bắt buộc phải có cho mỗi bài báo.
+Tải (Load) của một phản biện: Là tổng số bài báo mà người đó được phân công chấm.
+Mục tiêu của bài toán (Objective):
+1 Ràng buộc cứng: Mỗi bài báo phải được chấm bởi đúng b người.
+2 Tối ưu hóa: Tìm một phương án phân công sao cho tải trọng tối đa (maximum load) của tất cả các phản biện là nhỏ nhất có thể. Đây là dạng bài toán min-max điển hình, nhằm đảm bảo sự công bằng, không để ai phải chấm quá nhiều bài.
+
+
+
+
+Mục tiêu của môn học sau khi làm bài toán trên:
+"
+Biết cách phân tích và mô hình hóa bài toán 
+ĐỀ xuất các thuật toán để giải quyết bài toán(ví dụ:
+1. greedy, dp, hill climbing...
+2. exact solver: thông qua công cụ gg ORTOOLS
+3. local search với nhiều operator, tabu search, simulated annealing, large neighborhood search,...
+)
+Ta cần đánh giá bài toán từ các phương pháp trên:
+Bằng cách gen các test case mẫu (với độ phức tạp tăng dần)
+và so sánh các phương pháp giải với nhau (về: độ chính xác, thời gian, tài nguyên tiêu thụ,...)
+Phải phân tích kĩ các test case đi đôi với thuật toán và chỉ ra dựa trên các câu hỏi sau:
+"
+1. phân tích thuật toán, toán tử xem
+tại sao tôi nghĩ toán tử này hiệu quả và thực hiện nó hiệu quả
+hoặc tôi nghĩ cái này hiệu quả nhưng đến khi thực hiện không hiệu quả và ngược lại
+2. phân tích đa chiều xem khả năng tổng quát hoá
+ 
+3. phân tích mưcs độ hiểu quả của toán tử
+ 
+4. giải thích chặt chẽ xem tại sao lại chọn như này như kia
+ 
+"
+"
