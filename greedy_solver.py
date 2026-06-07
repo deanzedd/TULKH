@@ -92,7 +92,12 @@ def greedy_assign(N, M, b, L):
     assignment = [[] for _ in range(N)]
     feasible = True
 
-    for i in range(N):
+    # Sắp xếp paper theo |L[i]| tăng dần:
+    # Paper có ít lựa chọn reviewer hơn sẽ khó xếp hơn → ưu tiên xử lý trước
+    # để tránh bị "kẹt" sau khi các reviewer tốt đã bị gán hết.
+    paper_order = sorted(range(N), key=lambda i: len(L[i]))
+
+    for i in paper_order:
         candidates = L[i]
         if len(candidates) < b:
             feasible = False
