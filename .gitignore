@@ -1,3 +1,4 @@
 *.json
 TULKH_venv/
 testcase_ex.txt
+__pycache__/
