@@ -48,6 +48,14 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT_DIR))
 
+try:
+    from ortools.sat.python import cp_model
+
+    CPSAT_AVAILABLE = True
+except ImportError:
+    cp_model = None
+    CPSAT_AVAILABLE = False
+
 
 # =====================================================================
 #  INPUT / OUTPUT
@@ -124,16 +132,6 @@ def compute_loads(assignment, M):
         for r in reviewers:
             loads[r] += 1
     return loads
-
-
-def build_papers_by_reviewer(assignment):
-    papers_by_reviewer = {}
-    for i, reviewers in enumerate(assignment):
-        for r in reviewers:
-            if r not in papers_by_reviewer:
-                papers_by_reviewer[r] = []
-            papers_by_reviewer[r].append(i)
-    return papers_by_reviewer
 
 
 def compute_statistics(loads):
@@ -225,6 +223,66 @@ def greedy_assign(N, M, b, L):
 
 
 # =====================================================================
+#  GOOGLE OR-TOOLS CP-SAT
+# =====================================================================
+def cpsat_solve(N, M, b, L, time_limit_sec=10.0, workers=4):
+    """
+    Exact solver bang Google OR-Tools CP-SAT.
+    Neu dat status OPTIMAL thi max_load la OPT de tinh gap cho LNS/Greedy.
+    """
+    if not CPSAT_AVAILABLE:
+        return None, -1, [0] * M, "CP-SAT_NOT_INSTALLED"
+
+    if not check_instance_feasible(N, M, b, L):
+        return None, -1, [0] * M, "INFEASIBLE_INPUT"
+
+    model = cp_model.CpModel()
+    x = {}
+
+    for i in range(N):
+        for r in L[i]:
+            x[i, r] = model.NewBoolVar(f"x_{i}_{r}")
+
+    for i in range(N):
+        model.Add(sum(x[i, r] for r in L[i]) == b)
+
+    load_vars = []
+    for r in range(M):
+        load_r = model.NewIntVar(0, N, f"load_{r}")
+        papers_for_r = [i for i in range(N) if r in L[i]]
+        if papers_for_r:
+            model.Add(load_r == sum(x[i, r] for i in papers_for_r))
+        else:
+            model.Add(load_r == 0)
+        load_vars.append(load_r)
+
+    lb = lower_bound(N, M, b)
+    max_load_var = model.NewIntVar(lb, N * b, "max_load")
+    model.AddMaxEquality(max_load_var, load_vars)
+    model.Minimize(max_load_var)
+
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = float(time_limit_sec)
+    solver.parameters.num_search_workers = int(workers)
+
+    status = solver.Solve(model)
+    status_str = solver.StatusName(status)
+
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        return None, -1, [0] * M, status_str
+
+    assignment = [[] for _ in range(N)]
+    loads = [0] * M
+    for i in range(N):
+        for r in L[i]:
+            if solver.Value(x[i, r]) == 1:
+                assignment[i].append(r)
+                loads[r] += 1
+
+    return assignment, max(loads) if loads else 0, loads, status_str
+
+
+# =====================================================================
 #  LNS CORE
 # =====================================================================
 def choose_lns_parameters(N):
@@ -278,7 +336,7 @@ def choose_destroy_size(rng, destroy_min, destroy_max, stale_iterations, restart
     return rng.randint(destroy_min, destroy_max)
 
 
-def select_destroy_papers(assignment, loads, L, k, rng, heavy_bias, papers_by_reviewer=None):
+def select_destroy_papers(assignment, loads, L, k, rng, heavy_bias):
     """
     Chon paper de destroy.
     Uu tien paper dang gan reviewer tai cao, vi chung co kha nang la nut that
@@ -293,21 +351,11 @@ def select_destroy_papers(assignment, loads, L, k, rng, heavy_bias, papers_by_re
     hot_reviewers = {r for r, load in enumerate(loads) if load >= hot_threshold}
 
     scored = []
-    if papers_by_reviewer:
-        # Dung cache: chi quay cac paper dang co reviewer hot
-        candidates_set = set()
-        for r in hot_reviewers:
-            candidates_set.update(papers_by_reviewer.get(r, []))
-        for i in candidates_set:
-            hot_count = sum(1 for r in assignment[i] if r in hot_reviewers)
-            if hot_count > 0:
-                scored.append((-hot_count, -len(L[i]), rng.random(), i))
-    else:
-        # Fallback: quay toan bo
-        for i in range(N):
-            hot_count = sum(1 for r in assignment[i] if r in hot_reviewers)
-            if hot_count > 0:
-                scored.append((-hot_count, -len(L[i]), rng.random(), i))
+    for i in range(N):
+        hot_count = sum(1 for r in assignment[i] if r in hot_reviewers)
+        if hot_count > 0:
+            # Paper co nhieu alternative hon de repair linh hoat hon.
+            scored.append((-hot_count, -len(L[i]), rng.random(), i))
 
     scored.sort()
     selected = []
@@ -363,7 +411,7 @@ def repair_assignment(assignment, loads, b, L, papers, rng, repair_noise):
     return True
 
 
-def polish_hot_reviewers(assignment, loads, L, max_steps, papers_by_reviewer=None):
+def polish_hot_reviewers(assignment, loads, L, max_steps):
     """
     Buoc repair cuc bo: neu reviewer dang o max_load co the chuyen mot paper
     sang reviewer nhe hon ma khong lam tang max_load, thuc hien move do.
@@ -381,13 +429,10 @@ def polish_hot_reviewers(assignment, loads, L, max_steps, papers_by_reviewer=Non
 
         for hot in hot_reviewers:
             # Paper co nhieu lua chon hon thu truoc vi de thay reviewer hon.
-            if papers_by_reviewer:
-                papers = papers_by_reviewer.get(hot, [])
-            else:
-                papers = [i for i in range(N) if hot in assignment[i]]
-            papers_sorted = sorted(papers, key=lambda i: -len(L[i]))
+            papers = [i for i in range(N) if hot in assignment[i]]
+            papers.sort(key=lambda i: -len(L[i]))
 
-            for i in papers_sorted:
+            for i in papers:
                 assigned = set(assignment[i])
                 candidates = [
                     r
@@ -472,12 +517,9 @@ def lns_solve(
     best_loads = list(loads)
     best_obj = current_obj
 
-    papers_by_reviewer = build_papers_by_reviewer(assignment)
-
     start_time = time.perf_counter()
     time_to_best = 0.0
     last_best_iteration = 0
-    lb = lower_bound(N, M, b)
 
     stats = {
         "status": "OK",
@@ -505,11 +547,6 @@ def lns_solve(
         if elapsed >= time_limit_sec:
             break
 
-        # Early stopping: neu da dat optimal
-        if best_obj == lb:
-            stats["early_stop"] = True
-            break
-
         stale = iteration - last_best_iteration
 
         # Neu di qua lau khong cai thien, dua current ve best roi tiep tuc
@@ -518,34 +555,30 @@ def lns_solve(
             assignment = [list(reviewers) for reviewers in best_assignment]
             loads = list(best_loads)
             current_obj = best_obj
-            papers_by_reviewer = build_papers_by_reviewer(assignment)
             last_best_iteration = iteration
             stats["resets_to_best"] += 1
             stale = 0
 
         old_assignment = [list(reviewers) for reviewers in assignment]
         old_loads = list(loads)
-        old_papers_by_reviewer = papers_by_reviewer
         old_obj = current_obj
 
         k = choose_destroy_size(rng, destroy_min, destroy_max, stale, restart_after)
-        papers = select_destroy_papers(assignment, loads, L, k, rng, heavy_bias, papers_by_reviewer)
+        papers = select_destroy_papers(assignment, loads, L, k, rng, heavy_bias)
 
         destroy_assignment(assignment, loads, papers)
         repaired = repair_assignment(assignment, loads, b, L, papers, rng, repair_noise)
 
         if repaired:
             stats["polish_moves"] += polish_hot_reviewers(
-                assignment, loads, L, polish_steps, None
+                assignment, loads, L, polish_steps
             )
 
         if not repaired:
             assignment = old_assignment
             loads = old_loads
-            papers_by_reviewer = old_papers_by_reviewer
             current_obj = old_obj
             stats["rejected"] += 1
-            stats["iterations"] = iteration
             continue
 
         new_obj = objective(loads)
@@ -566,7 +599,6 @@ def lns_solve(
             current_obj = new_obj
             stats["accepted"] += 1
             stats["destroyed_total"] += len(papers)
-            papers_by_reviewer = build_papers_by_reviewer(assignment)
 
             if new_obj < best_obj:
                 best_obj = new_obj
@@ -580,20 +612,14 @@ def lns_solve(
         else:
             assignment = old_assignment
             loads = old_loads
-            papers_by_reviewer = old_papers_by_reviewer
             current_obj = old_obj
             stats["rejected"] += 1
 
         stats["iterations"] = iteration
 
-    best_loads = compute_loads(best_assignment, M)
-    best_obj = objective(best_loads)
     stats["total_time"] = time.perf_counter() - start_time
     stats["final_current_max_load"] = current_obj
     stats["best_max_load"] = best_obj
-    stats["lower_bound"] = lb
-    if "early_stop" not in stats:
-        stats["early_stop"] = False
 
     return best_assignment, best_obj, best_loads, stats
 
@@ -647,12 +673,6 @@ def build_arg_parser():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--lns-time-limit", type=float, default=None)
     parser.add_argument("--lns-iterations", type=int, default=None)
-    parser.add_argument(
-        "--local-search-iterations",
-        type=int,
-        default=None,
-        help="So iteration cho local_search_solver.py khi chay --compare.",
-    )
     parser.add_argument("--cpsat-time-limit", type=float, default=None)
     parser.add_argument("--cpsat-workers", type=int, default=4)
     parser.add_argument(
@@ -668,10 +688,7 @@ def main():
     args = parser.parse_args()
 
     if args.benchmark or not args.input_file:
-        try:
-            from .run_comparison import run_benchmark
-        except ImportError:
-            from run_comparison import run_benchmark
+        from run_comparison import run_benchmark
 
         run_benchmark(args)
         return
@@ -679,10 +696,7 @@ def main():
     N, M, b, L = parse_input(args.input_file)
 
     if args.compare:
-        try:
-            from .run_comparison import run_comparison
-        except ImportError:
-            from run_comparison import run_comparison
+        from run_comparison import run_comparison
 
         summary = run_comparison(
             Path(args.input_file).name,
@@ -693,7 +707,6 @@ def main():
             seed=args.seed,
             lns_time_limit=args.lns_time_limit,
             lns_iterations=args.lns_iterations,
-            local_search_iterations=args.local_search_iterations,
             cpsat_time_limit=args.cpsat_time_limit or 10.0,
             cpsat_workers=args.cpsat_workers,
             show_table=True,

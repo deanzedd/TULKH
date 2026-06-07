@@ -162,7 +162,7 @@ def operator_move(assignment, loads, N, M, b, L):
     max_load = max(loads)
     min_load = min(loads)
     
-    if max_load - min_load <= 1:
+    if not (max_load - min_load > 1):
         return False  # Đã khá cân bằng
     
     heavy_reviewers = [j for j in range(M) if loads[j] == max_load]

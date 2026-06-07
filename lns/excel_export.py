@@ -19,12 +19,8 @@ HEADERS = [
     "Solver",
     "Status",
     "MaxLoad",
-    "DeltaCP",
-    "GainGreedy",
-    "GapLBPercent",
     "TimeSeconds",
     "PeakMemoryKB",
-    "Notes",
 ]
 
 
@@ -64,7 +60,10 @@ def _sheet_xml(rows):
     dimension = f"A1:{_cell_ref(max(1, len(rows)), len(HEADERS))}"
     cols = "".join(
         f'<col min="{i}" max="{i}" width="{width}" customWidth="1"/>'
-        for i, width in enumerate([24, 8, 8, 6, 12, 12, 18, 10, 10, 14, 14, 14, 14, 42], start=1)
+        for i, width in enumerate(
+            [24, 8, 8, 6, 12, 12, 18, 10, 14, 14],
+            start=1,
+        )
     )
     return f'''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -125,48 +124,25 @@ def comparison_rows(summaries):
     rows = [HEADERS]
     for summary in summaries:
         results = summary.get("results", [])
-        greedy = next((r for r in results if r.get("solver") == "Greedy"), None)
-        cpsat = next((r for r in results if r.get("solver") == "CP-SAT"), None)
-        greedy_max = greedy.get("max_load") if greedy else None
-        cpsat_max = cpsat.get("max_load") if cpsat else None
         lb = summary.get("lower_bound")
 
         for result in results:
             max_load = result.get("max_load")
-            delta_cp = (
-                max_load - cpsat_max
-                if isinstance(max_load, int) and isinstance(cpsat_max, int) and cpsat_max >= 0
-                else None
-            )
-            gain_greedy = (
-                greedy_max - max_load
-                if isinstance(max_load, int) and isinstance(greedy_max, int) and greedy_max >= 0
-                else None
-            )
-            gap_lb = (
-                round((max_load - lb) / lb * 100, 4)
-                if isinstance(max_load, int) and isinstance(lb, int) and lb > 0 and max_load >= 0
-                else None
-            )
-            extra = result.get("extra", {})
-            notes = extra.get("source") or extra.get("status") or ""
 
-            rows.append([
-                summary.get("case_name"),
-                summary.get("N"),
-                summary.get("M"),
-                summary.get("b"),
-                lb,
-                result.get("solver"),
-                result.get("status"),
-                max_load,
-                delta_cp,
-                gain_greedy,
-                gap_lb,
-                round(result.get("time_seconds", 0), 6),
-                round(result.get("peak_memory_kb", 0), 2),
-                notes,
-            ])
+            rows.append(
+                [
+                    summary.get("case_name"),
+                    summary.get("N"),
+                    summary.get("M"),
+                    summary.get("b"),
+                    lb,
+                    result.get("solver"),
+                    result.get("status"),
+                    max_load,
+                    round(result.get("time_seconds", 0), 6),
+                    round(result.get("peak_memory_kb", 0), 2),
+                ]
+            )
 
     return rows
 
