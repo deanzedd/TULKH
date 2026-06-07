@@ -35,6 +35,54 @@ import sys
 from collections import deque
 
 
+# =====================================================================
+#  HÀM ĐỌC / GHI THEO FORMAT ĐỀ BÀI
+# =====================================================================
+def parse_input(source=None):
+    """
+    Đọc input theo format:
+      Dòng 1: N M b
+      Dòng i+1 (i=1..N): k r1 r2 ... rk  (reviewer 1-indexed)
+
+    Params:
+        source: None = đọc từ stdin; str = đường dẫn file
+    Returns:
+        N, M, b, L  (L dùng 0-indexed nội bộ)
+    """
+    if source is None:
+        lines = sys.stdin.read().split('\n')
+    else:
+        with open(source, encoding='utf-8') as f:
+            lines = f.read().split('\n')
+
+    lines = [l.strip() for l in lines if l.strip()]
+    idx = 0
+    N, M, b = map(int, lines[idx].split())
+    idx += 1
+    L = []
+    for i in range(N):
+        parts = list(map(int, lines[idx].split()))
+        idx += 1
+        k = parts[0]
+        # 1-indexed → 0-indexed
+        reviewers = [r - 1 for r in parts[1: k + 1]]
+        L.append(reviewers)
+    return N, M, b, L
+
+
+def print_output(N, b, assignment):
+    """
+    In kết quả theo format:
+      Dòng 1: N
+      Dòng i+1: b r1 r2 ... rb  (reviewer 1-indexed)
+    """
+    print(N)
+    for i in range(N):
+        reviewers_1idx = [r + 1 for r in assignment[i]]
+        print(b, *reviewers_1idx)
+
+
+
 def initial_greedy(N, M, b, L):
     """Tạo lời giải khởi tạo bằng greedy min-load."""
     loads = [0] * M
@@ -438,6 +486,39 @@ def run_single_test(test_name, N, M, b, density, seed, max_iter=5000):
 
 
 def main():
+    """
+    Hai chế độ:
+      1. python local_search_solver.py <file>  -> đọc input từ file, in output theo format đề bài
+      2. python local_search_solver.py         -> chạy 9 test case ngẫu nhiên (batch benchmark)
+    """
+    # ── Chế độ 1: Đọc input từ file hoặc stdin ──────────────────────
+    if len(sys.argv) >= 2:
+        input_file = sys.argv[1]
+        print(f"[LocalSearch] Đọc input từ: {input_file}", file=sys.stderr)
+        N, M, b, L = parse_input(input_file)
+
+        tracemalloc.start()
+        start_time = time.perf_counter()
+        best_assignment, best_max_load, best_loads, history = local_search_solve(
+            N, M, b, L,
+            max_iterations=max(2000, N * 10),
+            initial_temp=max(10.0, N * 0.1),
+            cooling_rate=0.997,
+            tabu_tenure=min(50, N),
+            lns_frequency=max(20, N // 5),
+            destroy_ratio=min(0.3, 10.0 / max(N, 1)),
+            seed=42
+        )
+        end_time = time.perf_counter()
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+        print(f"[LocalSearch] Max Load = {best_max_load}", file=sys.stderr)
+        print(f"[LocalSearch] Time = {end_time - start_time:.6f}s | Memory = {peak/1024:.2f} KB", file=sys.stderr)
+        print_output(N, b, best_assignment)
+        return
+
+    # ── Chế độ 2: Batch benchmark với test case ngẫu nhiên ──────────
     print("╔" + "═"*58 + "╗")
     print("║   LOCAL SEARCH: SA + Tabu Search + LNS                  ║")
     print("║   Balanced Paper Assignment                             ║")
@@ -461,7 +542,6 @@ def main():
         result = run_single_test(test_name, N, M, b, density, seed, max_iter)
         results.append(result)
 
-    # Bảng tổng hợp
     print("\n\n" + "="*100)
     print(" BẢNG TỔNG HỢP KẾT QUẢ LOCAL SEARCH (SA + Tabu + LNS)")
     print("="*100)

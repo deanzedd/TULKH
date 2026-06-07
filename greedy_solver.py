@@ -19,6 +19,59 @@ import json
 import sys
 
 
+# =====================================================================
+#  HÀM ĐỌC / GHI THEO FORMAT ĐỀ BÀI
+# =====================================================================
+def parse_input(source=None):
+    """
+    Đọc input theo format:
+      Dòng 1: N M b
+      Dòng i+1 (i=1..N): k r1 r2 ... rk  (reviewer 1-indexed)
+
+    Params:
+        source: None = đọc từ stdin; str = đường dẫn file
+    Returns:
+        N, M, b, L  (L dùng 0-indexed nội bộ)
+    """
+    if source is None:
+        lines = sys.stdin.read().split('\n')
+    else:
+        with open(source, encoding='utf-8') as f:
+            lines = f.read().split('\n')
+
+    # Lọc dòng trống
+    lines = [l.strip() for l in lines if l.strip()]
+    idx = 0
+
+    N, M, b = map(int, lines[idx].split())
+    idx += 1
+
+    L = []
+    for i in range(N):
+        parts = list(map(int, lines[idx].split()))
+        idx += 1
+        k = parts[0]
+        # Chuyển reviewer từ 1-indexed sang 0-indexed
+        reviewers = [r - 1 for r in parts[1: k + 1]]
+        L.append(reviewers)
+
+    return N, M, b, L
+
+
+def print_output(N, b, assignment):
+    """
+    In kết quả theo format:
+      Dòng 1: N
+      Dòng i+1: b r1 r2 ... rb  (reviewer 1-indexed)
+    """
+    print(N)
+    for i in range(N):
+        # Chuyển reviewer từ 0-indexed sang 1-indexed
+        reviewers_1idx = [r + 1 for r in assignment[i]]
+        print(b, *reviewers_1idx)
+
+
+
 def greedy_assign(N, M, b, L):
     """
     Greedy solver cho bài toán Balanced Paper Assignment.
@@ -167,6 +220,31 @@ def run_single_test(test_name, N, M, b, density, seed):
 
 
 def main():
+    """
+    Hai chế độ:
+      1. python greedy_solver.py <file>   -> đọc input từ file, in output theo format đề bài
+      2. python greedy_solver.py          -> chạy 9 test case ngẫu nhiên (batch benchmark)
+    """
+    # ── Chế độ 1: Đọc input từ file hoặc stdin ──────────────────────
+    if len(sys.argv) >= 2:
+        input_file = sys.argv[1]
+        print(f"[Greedy] Đọc input từ: {input_file}", file=sys.stderr)
+        N, M, b, L = parse_input(input_file)
+
+        tracemalloc.start()
+        start_time = time.perf_counter()
+        assignment, max_load, loads, feasible = greedy_assign(N, M, b, L)
+        end_time = time.perf_counter()
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+        print(f"[Greedy] Max Load = {max_load} | Feasible = {feasible}", file=sys.stderr)
+        print(f"[Greedy] Time = {end_time - start_time:.6f}s | Memory = {peak/1024:.2f} KB", file=sys.stderr)
+        # In output chuẩn ra stdout
+        print_output(N, b, assignment)
+        return
+
+    # ── Chế độ 2: Batch benchmark với test case ngẫu nhiên ──────────
     print("╔" + "═"*58 + "╗")
     print("║   THUẬT TOÁN GREEDY - Balanced Paper Assignment          ║")
     print("║   Chiến lược: Min-Load-First                             ║")
@@ -202,7 +280,6 @@ def main():
               f"{r['max_load']:>8} {r['avg_load']:>8} {r['std_dev']:>7} "
               f"{r['time_seconds']:>10.6f} {r['peak_memory_kb']:>10.2f}")
 
-    # Xuất JSON
     with open("greedy_results.json", "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
     print(f"\n Kết quả đã lưu vào greedy_results.json")

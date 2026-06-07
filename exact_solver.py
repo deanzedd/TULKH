@@ -32,8 +32,56 @@ try:
     ORTOOLS_AVAILABLE = True
 except ImportError:
     ORTOOLS_AVAILABLE = False
-    print("⚠ OR-Tools chưa được cài đặt. Chạy: pip install ortools")
-    print("  Đang sử dụng fallback ILP solver đơn giản...\n")
+    print("⚠ OR-Tools chưa được cài đặt. Chạy: pip install ortools", file=sys.stderr)
+    print("  Đang sử dụng fallback ILP solver đơn giản...\n", file=sys.stderr)
+
+
+# =====================================================================
+#  HÀM ĐỌC / GHI THEO FORMAT ĐỀ BÀI
+# =====================================================================
+def parse_input(source=None):
+    """
+    Đọc input theo format:
+      Dòng 1: N M b
+      Dòng i+1 (i=1..N): k r1 r2 ... rk  (reviewer 1-indexed)
+
+    Params:
+        source: None = đọc từ stdin; str = đường dẫn file
+    Returns:
+        N, M, b, L  (L dùng 0-indexed nội bộ)
+    """
+    if source is None:
+        lines = sys.stdin.read().split('\n')
+    else:
+        with open(source, encoding='utf-8') as f:
+            lines = f.read().split('\n')
+
+    lines = [l.strip() for l in lines if l.strip()]
+    idx = 0
+    N, M, b = map(int, lines[idx].split())
+    idx += 1
+    L = []
+    for i in range(N):
+        parts = list(map(int, lines[idx].split()))
+        idx += 1
+        k = parts[0]
+        # 1-indexed → 0-indexed
+        reviewers = [r - 1 for r in parts[1: k + 1]]
+        L.append(reviewers)
+    return N, M, b, L
+
+
+def print_output(N, b, assignment):
+    """
+    In kết quả theo format:
+      Dòng 1: N
+      Dòng i+1: b r1 r2 ... rb  (reviewer 1-indexed)
+    """
+    print(N)
+    for i in range(N):
+        reviewers_1idx = [r + 1 for r in assignment[i]]
+        print(b, *reviewers_1idx)
+
 
 
 def exact_solve_ortools(N, M, b, L, time_limit_seconds=60):
@@ -363,6 +411,30 @@ def run_single_test(test_name, N, M, b, density, seed, time_limit=60):
 
 
 def main():
+    """
+    Hai chế độ:
+      1. python exact_solver.py <file>   -> đọc input từ file, in output theo format đề bài
+      2. python exact_solver.py          -> chạy 9 test case ngẫu nhiên (batch benchmark)
+    """
+    # ── Chế độ 1: Đọc input từ file hoặc stdin ──────────────────────
+    if len(sys.argv) >= 2:
+        input_file = sys.argv[1]
+        print(f"[Exact] Đọc input từ: {input_file}", file=sys.stderr)
+        N, M, b, L = parse_input(input_file)
+
+        tracemalloc.start()
+        start_time = time.perf_counter()
+        assignment, max_load, loads, status = exact_solve_ortools(N, M, b, L, time_limit_seconds=300)
+        end_time = time.perf_counter()
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+        print(f"[Exact] Status = {status} | Max Load = {max_load}", file=sys.stderr)
+        print(f"[Exact] Time = {end_time - start_time:.6f}s | Memory = {peak/1024:.2f} KB", file=sys.stderr)
+        print_output(N, b, assignment)
+        return
+
+    # ── Chế độ 2: Batch benchmark với test case ngẫu nhiên ──────────
     print("╔" + "═"*58 + "╗")
     print("║   EXACT SOLVER - Google OR-Tools CP-SAT                 ║")
     print("║   Balanced Paper Assignment (Optimal Solution)          ║")
@@ -373,7 +445,6 @@ def main():
     else:
         print(" ⚠ Đang dùng fallback solver (Binary Search + Max Flow)")
 
-    # Exact solver chậm hơn → giới hạn kích thước test
     test_cases = [
         # (tên, N, M, b, density, seed, time_limit)
         ("Nhỏ - Cơ bản",         5,   3, 2, 0.6,  42, 10),
@@ -392,7 +463,6 @@ def main():
         result = run_single_test(test_name, N, M, b, density, seed, tl)
         results.append(result)
 
-    # Bảng tổng hợp
     print("\n\n" + "="*90)
     print(" BẢNG TỔNG HỢP KẾT QUẢ EXACT SOLVER")
     print("="*90)
